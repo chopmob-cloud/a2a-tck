@@ -16,8 +16,8 @@ answering early.  These tests deliberately do NOT route through the
 ``_task_helpers`` factories: those call ``pytest.skip`` when the task does
 not reach the expected state, which would convert the exact failure these
 tests exist to catch -- a blocking send answering with the wrong state --
-into a silent skip.  Only a transport-level failure or a missing task id
-skips here, because those leave nothing to assert on.
+into a silent skip.  Only a transport-level failure skips here; a successful
+response without a task id is a lifecycle failure and fails the test.
 
 Requirements tested:
     CORE-EXECUTION-MODE-001 - Blocking mode waits for terminal or
@@ -137,9 +137,11 @@ def _send_input_required(client: BaseTransportClient) -> Any:
     ``pytest.skip`` when the task does not reach the expected state, which
     would convert the exact failure these tests exist to catch -- a blocking
     send answering with the wrong state -- into a silent skip.  Only a
-    transport-level failure or a missing task id skips here, because those
-    leave nothing to assert on.  The task state itself is always asserted by
-    the caller.
+    transport-level failure skips here.  A successful response with no task id
+    is a lifecycle failure, not an untestable one: the INPUT_REQUIRED
+    requirement binds an interrupted Task, so a bare Message is reported as a
+    failure rather than skipped.  The task state itself is asserted by the
+    caller.
     """
     message: dict[str, Any] = {
         "role": "ROLE_USER",
@@ -150,7 +152,10 @@ def _send_input_required(client: BaseTransportClient) -> Any:
     if not response.success:
         pytest.skip(f"send_message failed: {response.error}")
     if not response.task_id:
-        pytest.skip("Could not extract task ID from send_message response")
+        pytest.fail(
+            "send_message returned success without a task ID: a blocking send "
+            "that needs client input must answer with a Task, not a bare Message"
+        )
     return response
 
 
